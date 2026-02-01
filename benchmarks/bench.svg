@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 520" width="640" height="520">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=Instrument+Sans:wght@400;500;600&amp;display=swap');
+      .bg { fill: #0c0a09; }
+      .title { font-family: 'Instrument Sans', sans-serif; font-size: 14px; font-weight: 500; fill: #a8a29e; letter-spacing: 0.05em; }
+      .specs { font-family: 'IBM Plex Mono', monospace; font-size: 12px; fill: #57534e; }
+      .section-title { font-family: 'Instrument Sans', sans-serif; font-size: 11px; font-weight: 600; fill: #e7e5e4; letter-spacing: 0.1em; text-transform: uppercase; }
+      .section-line { stroke: #292524; stroke-width: 1; }
+      .count { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; fill: #d6d3d1; }
+      .time { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #57534e; }
+      .bar-bg { fill: #1c1917; }
+      .bar-safe { fill: #84cc16; }
+      .bar-warn { fill: #eab308; }
+      .bar-danger { fill: #ef4444; }
+      .percent { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #78716c; }
+      .percent-highlight { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #fafaf9; font-weight: 500; }
+      .footer { font-family: 'IBM Plex Mono', monospace; font-size: 11px; fill: #57534e; }
+      .header-line { stroke: #292524; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0" y="0" width="100%" height="100%"/>
+
+  <!-- Header -->
+  <text class="title" x="48" y="44">odecs benchmarks</text>
+  <text class="specs" x="48" y="62">M1 Max · -o:speed · 16ms budget</text>
+  <line class="header-line" x1="48" y1="80" x2="592" y2="80"/>
+
+  <!-- SPAWN ENTITIES -->
+  <text class="section-title" x="48" y="110">SPAWN</text>
+  <line class="section-line" x1="100" y1="106" x2="592" y2="106"/>
+
+  <!-- 10k -->
+  <text class="count" x="90" y="134" text-anchor="end">10k</text>
+  <text class="time" x="150" y="134" text-anchor="end">0.20ms</text>
+  <rect class="bar-bg" x="168" y="126" width="360" height="2" rx="1"/>
+  <rect class="bar-safe" x="168" y="126" width="4" height="2" rx="1"/>
+  <text class="percent" x="544" y="134">1%</text>
+
+  <!-- 100k -->
+  <text class="count" x="90" y="156" text-anchor="end">100k</text>
+  <text class="time" x="150" y="156" text-anchor="end">1.2ms</text>
+  <rect class="bar-bg" x="168" y="148" width="360" height="2" rx="1"/>
+  <rect class="bar-safe" x="168" y="148" width="29" height="2" rx="1"/>
+  <text class="percent" x="544" y="156">8%</text>
+
+  <!-- 1M -->
+  <text class="count" x="90" y="178" text-anchor="end">1M</text>
+  <text class="time" x="150" y="178" text-anchor="end">12ms</text>
+  <rect class="bar-bg" x="168" y="170" width="360" height="2" rx="1"/>
+  <rect class="bar-danger" x="168" y="170" width="266" height="2" rx="1"/>
+  <text class="percent-highlight" x="544" y="178">74%</text>
+
+  <!-- ADD COMPONENT -->
+  <text class="section-title" x="48" y="214">ADD COMPONENT</text>
+  <line class="section-line" x1="165" y1="210" x2="592" y2="210"/>
+
+  <!-- 10k -->
+  <text class="count" x="90" y="238" text-anchor="end">10k</text>
+  <text class="time" x="150" y="238" text-anchor="end">0.67ms</text>
+  <rect class="bar-bg" x="168" y="230" width="360" height="2" rx="1"/>
+  <rect class="bar-safe" x="168" y="230" width="14" height="2" rx="1"/>
+  <text class="percent" x="544" y="238">4%</text>
+
+  <!-- 100k -->
+  <text class="count" x="90" y="260" text-anchor="end">100k</text>
+  <text class="time" x="150" y="260" text-anchor="end">6.9ms</text>
+  <rect class="bar-bg" x="168" y="252" width="360" height="2" rx="1"/>
+  <rect class="bar-warn" x="168" y="252" width="155" height="2" rx="1"/>
+  <text class="percent" x="544" y="260">43%</text>
+
+  <!-- 200k -->
+  <text class="count" x="90" y="282" text-anchor="end">200k</text>
+  <text class="time" x="150" y="282" text-anchor="end">14ms</text>
+  <rect class="bar-bg" x="168" y="274" width="360" height="2" rx="1"/>
+  <rect class="bar-danger" x="168" y="274" width="313" height="2" rx="1"/>
+  <text class="percent-highlight" x="544" y="282">87%</text>
+
+  <!-- MOVE ENTITIES -->
+  <text class="section-title" x="48" y="318">MOVE (POS += VEL)</text>
+  <line class="section-line" x1="185" y1="314" x2="592" y2="314"/>
+
+  <!-- 1M -->
+  <text class="count" x="90" y="342" text-anchor="end">1M</text>
+  <text class="time" x="150" y="342" text-anchor="end">0.34ms</text>
+  <rect class="bar-bg" x="168" y="334" width="360" height="2" rx="1"/>
+  <rect class="bar-safe" x="168" y="334" width="7" height="2" rx="1"/>
+  <text class="percent" x="544" y="342">2%</text>
+
+  <!-- 10M -->
+  <text class="count" x="90" y="364" text-anchor="end">10M</text>
+  <text class="time" x="150" y="364" text-anchor="end">3.4ms</text>
+  <rect class="bar-bg" x="168" y="356" width="360" height="2" rx="1"/>
+  <rect class="bar-warn" x="168" y="356" width="79" height="2" rx="1"/>
+  <text class="percent" x="544" y="364">22%</text>
+
+  <!-- 40M -->
+  <text class="count" x="90" y="386" text-anchor="end">40M</text>
+  <text class="time" x="150" y="386" text-anchor="end">15ms</text>
+  <rect class="bar-bg" x="168" y="378" width="360" height="2" rx="1"/>
+  <rect class="bar-danger" x="168" y="378" width="328" height="2" rx="1"/>
+  <text class="percent-highlight" x="544" y="386">91%</text>
+
+  <!-- QUERY -->
+  <text class="section-title" x="48" y="422">QUERY (CACHED)</text>
+  <line class="section-line" x1="155" y1="418" x2="592" y2="418"/>
+
+  <!-- any -->
+  <text class="count" x="90" y="446" text-anchor="end">any</text>
+  <text class="time" x="150" y="446" text-anchor="end">&lt;0.01</text>
+  <rect class="bar-bg" x="168" y="438" width="360" height="2" rx="1"/>
+  <rect class="bar-safe" x="168" y="438" width="1" height="2" rx="1"/>
+  <text class="percent" x="544" y="446">~free</text>
+
+  <!-- Footer -->
+  <line class="header-line" x1="48" y1="472" x2="592" y2="472"/>
+  <text class="footer" x="48" y="492">60-frame warm cache</text>
+  <text class="footer" x="592" y="492" text-anchor="end">16ms = 100% frame</text>
+</svg>
