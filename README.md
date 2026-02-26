@@ -137,7 +137,7 @@ add_component :: proc(world: ^World, $Type: typeid, component: $T)  // attach to
 add_component :: proc(world: ^World, $Type: typeid, $Tag: typeid)   // attach tag to type
 add_components :: proc(world: ^World, entity: EntityID, components: ..any)
 remove_component :: proc(world: ^World, entity: EntityID, $T: typeid)
-get_component :: proc(world: ^World, entity: EntityID, $T: typeid) -> ^T
+get_component :: proc(world: ^World, entity: EntityID, $T: typeid) -> (^T, bool)
 has_component :: proc(world: ^World, entity: EntityID, $T: typeid) -> bool
 
 // Relation Traits (attach to relation types)
