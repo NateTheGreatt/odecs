@@ -506,15 +506,16 @@ remove_component_immediate :: proc(world: ^World, entity: EntityID, cid: Compone
     move_entity(world, entity, arch, edge.target, edge.column_map)
 }
 
-get_component_entity :: proc(world: ^World, entity: EntityID, $T: typeid) -> ^T {
-    if !entity_alive(world, entity) do return nil
+get_component_entity :: proc(world: ^World, entity: EntityID, $T: typeid) -> (^T, bool) {
+    if !entity_alive(world, entity) do return nil, false
     cid, ok := get_component_id(world, T)
-    if !ok do return nil
+    if !ok do return nil, false
     idx := u32(entity_index(entity))
     record := world.records[idx]
     col_idx := archetype_get_column(record.archetype, cid)
-    if col_idx < 0 do return nil
-    return column_get(&record.archetype.columns[col_idx], record.row, T)
+    if col_idx < 0 do return nil, false
+    ptr := column_get(&record.archetype.columns[col_idx], record.row, T)
+    return ptr, ptr != nil
 }
 
 get_component :: proc {
@@ -900,9 +901,9 @@ has_component_on_type :: proc(world: ^World, $Type: typeid, $T: typeid) -> bool 
 }
 
 // Get a component from a type's shadow entity
-get_component_from_type :: proc(world: ^World, $Type: typeid, $T: typeid) -> ^T {
+get_component_from_type :: proc(world: ^World, $Type: typeid, $T: typeid) -> (^T, bool) {
     entity, ok := world.type_entities[Type]
-    if !ok do return nil
+    if !ok do return nil, false
     return get_component_entity(world, entity, T)
 }
 
