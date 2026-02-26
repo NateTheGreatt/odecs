@@ -243,8 +243,7 @@ bench_get_component :: proc(world: ^ecs.World, n: int) {
     sum: f32 = 0
     for i in 0..<n {
         idx := rand.int31_max(i32(n))
-        pos := ecs.get_component(world, entities[idx], Position)
-        if pos != nil {
+        if pos, ok := ecs.get_component(world, entities[idx], Position); ok {
             sum += pos.x
         }
     }
@@ -264,8 +263,7 @@ bench_update_component :: proc(world: ^ecs.World, n: int) {
 
     // Update component data in-place
     for i in 0..<n {
-        pos := ecs.get_component(world, entities[i], Position)
-        if pos != nil {
+        if pos, ok := ecs.get_component(world, entities[i], Position); ok {
             pos.x += 1
             pos.y += 1
         }
@@ -446,8 +444,7 @@ bench_iterate_1_component :: proc(world: ^ecs.World, n: int) {
         entity, arch, row, ok := ecs.query_next(&iter)
         if !ok do break
 
-        pos := ecs.get_component_from_archetype(world, arch, row, Position)
-        if pos != nil {
+        if pos, ok := ecs.get_component_from_archetype(world, arch, row, Position); ok {
             sum += pos.x
         }
         _ = entity
@@ -471,11 +468,11 @@ bench_iterate_3_components :: proc(world: ^ecs.World, n: int) {
         entity, arch, row, ok := ecs.query_next(&iter)
         if !ok do break
 
-        pos := ecs.get_component_from_archetype(world, arch, row, Position)
-        vel := ecs.get_component_from_archetype(world, arch, row, Velocity)
-        hp := ecs.get_component_from_archetype(world, arch, row, Health)
+        pos, pos_ok := ecs.get_component_from_archetype(world, arch, row, Position)
+        vel, vel_ok := ecs.get_component_from_archetype(world, arch, row, Velocity)
+        hp, hp_ok   := ecs.get_component_from_archetype(world, arch, row, Health)
 
-        if pos != nil && vel != nil && hp != nil {
+        if pos_ok && vel_ok && hp_ok {
             sum += pos.x + vel.vx + f32(hp.current)
         }
         _ = entity

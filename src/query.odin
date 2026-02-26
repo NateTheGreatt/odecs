@@ -1053,14 +1053,15 @@ query_finish :: proc(iter: ^Query_Iterator) {
 }
 
 // Get component from archetype at row (for use in query iteration)
-get_component_from_archetype :: proc(world: ^World, arch: ^Archetype, row: int, $T: typeid) -> ^T {
+get_component_from_archetype :: proc(world: ^World, arch: ^Archetype, row: int, $T: typeid) -> (^T, bool) {
     cid, ok := get_component_id(world, T)
-    if !ok do return nil
+    if !ok do return nil, false
 
     col_idx := archetype_get_column(arch, cid)
-    if col_idx < 0 do return nil
+    if col_idx < 0 do return nil, false
 
-    return column_get(&arch.columns[col_idx], row, T)
+    ptr := column_get(&arch.columns[col_idx], row, T)
+    return ptr, ptr != nil
 }
 
 // Get table/column slice from archetype (for batch processing)

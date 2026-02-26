@@ -98,7 +98,7 @@ test_add_get_component :: proc(t: ^testing.T) {
     e := ecs.add_entity(world)
     ecs.add_component(world, e, Position{10, 20})
 
-    pos := ecs.get_component(world, e, Position)
+    pos, ok := ecs.get_component(world, e, Position)
     testing.expect(t, pos != nil, "Should get position")
     testing.expect(t, pos.x == 10, "Position x should be 10")
     testing.expect(t, pos.y == 20, "Position y should be 20")
@@ -127,12 +127,12 @@ test_component_update :: proc(t: ^testing.T) {
     e := ecs.add_entity(world)
     ecs.add_component(world, e, Health{100})
 
-    h := ecs.get_component(world, e, Health)
+    h, ok := ecs.get_component(world, e, Health)
     testing.expect(t, h.value == 100, "Health should be 100")
 
     // Update via add_component (should overwrite)
     ecs.add_component(world, e, Health{50})
-    h = ecs.get_component(world, e, Health)
+    h, ok = ecs.get_component(world, e, Health)
     testing.expect(t, h.value == 50, "Health should be 50 after update")
 }
 
@@ -150,9 +150,9 @@ test_multiple_components :: proc(t: ^testing.T) {
     testing.expect(t, ecs.has_component(world, e, Velocity), "Should have Velocity")
     testing.expect(t, ecs.has_component(world, e, Health), "Should have Health")
 
-    pos := ecs.get_component(world, e, Position)
-    vel := ecs.get_component(world, e, Velocity)
-    hp := ecs.get_component(world, e, Health)
+    pos, _ := ecs.get_component(world, e, Position)
+    vel, _ := ecs.get_component(world, e, Velocity)
+    hp, _ := ecs.get_component(world, e, Health)
 
     testing.expect(t, pos.x == 1 && pos.y == 2, "Position values correct")
     testing.expect(t, vel.x == 3 && vel.y == 4, "Velocity values correct")
@@ -191,9 +191,9 @@ test_add_components_batch :: proc(t: ^testing.T) {
     testing.expect(t, ecs.has_component(world, e, Velocity), "Should have Velocity")
     testing.expect(t, ecs.has_component(world, e, Health), "Should have Health")
 
-    pos := ecs.get_component(world, e, Position)
-    vel := ecs.get_component(world, e, Velocity)
-    hp := ecs.get_component(world, e, Health)
+    pos, _ := ecs.get_component(world, e, Position)
+    vel, _ := ecs.get_component(world, e, Velocity)
+    hp, _ := ecs.get_component(world, e, Health)
 
     testing.expect(t, pos.x == 1 && pos.y == 2, "Position values correct")
     testing.expect(t, vel.x == 3 && vel.y == 4, "Velocity values correct")
@@ -223,7 +223,7 @@ test_disable_enable_component :: proc(t: ^testing.T) {
     testing.expect(t, ecs.has_component(world, e, Health), "Should still have Health component")
 
     // Can still get it
-    hp := ecs.get_component(world, e, Health)
+    hp, ok := ecs.get_component(world, e, Health)
     testing.expect(t, hp != nil && hp.value == 100, "Should still get Health value")
 
     ecs.enable_component(world, e, Health)
@@ -296,7 +296,7 @@ test_query_iterator :: proc(t: ^testing.T) {
     count := 0
     iter := ecs.query_iter(world, {ecs.all(Position)})
     for entity, arch, row in ecs.query_next(&iter) {
-        pos := ecs.get_component_from_archetype(world, arch, row, Position)
+        pos, ok := ecs.get_component_from_archetype(world, arch, row, Position)
         testing.expect(t, pos != nil, "Should get position from iterator")
         count += 1
     }
@@ -556,9 +556,12 @@ test_operations_on_dead_entity :: proc(t: ^testing.T) {
     ecs.add_component(world, e, Position{1, 2})
     ecs.remove_entity(world, e)
 
+    pos, ok := ecs.get_component(world, e, Position)
+
     // All operations on dead entity should be safe (no crash) and return nil/false
     testing.expect(t, !ecs.entity_alive(world, e), "Dead entity should not be alive")
-    testing.expect(t, ecs.get_component(world, e, Position) == nil, "get_component on dead entity should return nil")
+    testing.expect(t, pos == nil, "get_component on dead entity should return nil")
+    testing.expect(t, ok == false, "get_component on dead entity should return false")
     testing.expect(t, !ecs.has_component(world, e, Position), "has_component on dead entity should return false")
     testing.expect(t, ecs.get_entity_row(world, e) == -1, "get_entity_row on dead entity should return -1")
     testing.expect(t, ecs.get_entity_archetype(world, e) == nil, "get_entity_archetype on dead entity should return nil")
@@ -589,11 +592,13 @@ test_operations_on_stale_entity :: proc(t: ^testing.T) {
     testing.expect(t, !ecs.entity_alive(world, old_entity), "Stale entity should not be alive")
     testing.expect(t, ecs.entity_alive(world, e2), "New entity should be alive")
 
+    old_pos, old_ok := ecs.get_component(world, old_entity, Position)
     // Operations on stale entity should not affect new entity
-    testing.expect(t, ecs.get_component(world, old_entity, Position) == nil, "get_component on stale entity should return nil")
+    testing.expect(t, old_pos == nil, "get_component on stale entity should return nil")
+    testing.expect(t, old_ok == false, "get_component on stale entity should return false")
 
     // New entity should still have correct data
-    pos := ecs.get_component(world, e2, Position)
+    pos, ok := ecs.get_component(world, e2, Position)
     testing.expect(t, pos != nil && pos.x == 3 && pos.y == 4, "New entity data should be intact")
 }
 
@@ -610,13 +615,15 @@ test_get_nonexistent_component :: proc(t: ^testing.T) {
     ecs.add_component(world, e, Position{1, 2})
 
     // Get component that entity doesn't have
-    vel := ecs.get_component(world, e, Velocity)
+    vel, vel_ok := ecs.get_component(world, e, Velocity)
     testing.expect(t, vel == nil, "Getting non-existent component should return nil")
+    testing.expect(t, vel_ok == false, "Getting non-existent component should return false")
 
     // Get component that's not even registered
     Unregistered :: struct { x: int }
-    unreg := ecs.get_component(world, e, Unregistered)
+    unreg, unreg_ok := ecs.get_component(world, e, Unregistered)
     testing.expect(t, unreg == nil, "Getting unregistered component should return nil")
+    testing.expect(t, unreg_ok == false, "Getting unregistered component should return false")
 }
 
 @(test)
@@ -967,8 +974,9 @@ test_swap_remove_preserves_data :: proc(t: ^testing.T) {
     for i in 0..<5 {
         if i == 1 do continue  // Skip deleted
 
-        pos := ecs.get_component(world, entities[i], Position)
+        pos, ok := ecs.get_component(world, entities[i], Position)
         testing.expect(t, pos != nil, fmt.tprintf("Entity %d should still exist", i))
+        testing.expect(t, ok == true, fmt.tprintf("Entity %d should still exist", i))
         testing.expect(t, pos.x == f32(i), fmt.tprintf("Entity %d Position.x should be %d", i, i))
         testing.expect(t, pos.y == f32(i * 10), fmt.tprintf("Entity %d Position.y should be %d", i, i * 10))
     }
@@ -997,8 +1005,8 @@ test_swap_remove_middle_entity :: proc(t: ^testing.T) {
     testing.expect(t, ecs.get_entity_row(world, e3) == 1, "e3 should be at row 1 after swap")
 
     // Data should be preserved
-    pos1 := ecs.get_component(world, e1, Position)
-    pos3 := ecs.get_component(world, e3, Position)
+    pos1, _ := ecs.get_component(world, e1, Position)
+    pos3, _ := ecs.get_component(world, e3, Position)
 
     testing.expect(t, pos1.x == 1 && pos1.y == 10, "e1 data should be preserved")
     testing.expect(t, pos3.x == 3 && pos3.y == 30, "e3 data should be preserved")
@@ -1120,8 +1128,8 @@ test_add_components_with_existing :: proc(t: ^testing.T) {
     // Batch add with one existing (Position) and one new (Velocity)
     ecs.add_components(world, e, Position{10, 20}, Velocity{3, 4})
 
-    pos := ecs.get_component(world, e, Position)
-    vel := ecs.get_component(world, e, Velocity)
+    pos, _ := ecs.get_component(world, e, Position)
+    vel, _ := ecs.get_component(world, e, Velocity)
 
     testing.expect(t, pos.x == 10 && pos.y == 20, "Position should be updated")
     testing.expect(t, vel.x == 3 && vel.y == 4, "Velocity should be added")
@@ -1144,8 +1152,8 @@ test_add_components_all_existing :: proc(t: ^testing.T) {
     arch_after := ecs.get_entity_archetype(world, e)
     testing.expect(t, arch_before == arch_after, "Archetype should not change when updating existing components")
 
-    pos := ecs.get_component(world, e, Position)
-    vel := ecs.get_component(world, e, Velocity)
+    pos, _ := ecs.get_component(world, e, Position)
+    vel, _ := ecs.get_component(world, e, Velocity)
 
     testing.expect(t, pos.x == 10 && pos.y == 20, "Position should be updated")
     testing.expect(t, vel.x == 30 && vel.y == 40, "Velocity should be updated")
@@ -1204,8 +1212,8 @@ test_distinct_int_component :: proc(t: ^testing.T) {
     testing.expect(t, ecs.has_component(world, e, Score), "Should have Score")
     testing.expect(t, ecs.has_component(world, e, Level), "Should have Level")
 
-    score := ecs.get_component(world, e, Score)
-    level := ecs.get_component(world, e, Level)
+    score, _ := ecs.get_component(world, e, Score)
+    level, _ := ecs.get_component(world, e, Level)
 
     testing.expect(t, score^ == Score(100), "Score should be 100")
     testing.expect(t, level^ == Level(5), "Level should be 5")
@@ -1563,8 +1571,8 @@ test_distinct_f32_component :: proc(t: ^testing.T) {
     testing.expect(t, ecs.has_component(world, e, Temperature), "Should have Temperature")
     testing.expect(t, ecs.has_component(world, e, Humidity), "Should have Humidity")
 
-    temp := ecs.get_component(world, e, Temperature)
-    hum := ecs.get_component(world, e, Humidity)
+    temp, _ := ecs.get_component(world, e, Temperature)
+    hum, _ := ecs.get_component(world, e, Humidity)
 
     testing.expect(t, temp^ == Temperature(98.6), "Temperature should be 98.6")
     testing.expect(t, hum^ == Humidity(0.75), "Humidity should be 0.75")
@@ -1585,8 +1593,8 @@ test_distinct_bool_component :: proc(t: ^testing.T) {
     testing.expect(t, ecs.has_component(world, e, IsActive), "Should have IsActive")
     testing.expect(t, ecs.has_component(world, e, IsVisible), "Should have IsVisible")
 
-    active := ecs.get_component(world, e, IsActive)
-    visible := ecs.get_component(world, e, IsVisible)
+    active, _ := ecs.get_component(world, e, IsActive)
+    visible, _ := ecs.get_component(world, e, IsVisible)
 
     testing.expect(t, bool(active^) == true, "IsActive should be true")
     testing.expect(t, bool(visible^) == false, "IsVisible should be false")
@@ -1607,8 +1615,8 @@ test_distinct_u64_component :: proc(t: ^testing.T) {
     testing.expect(t, ecs.has_component(world, e, NetworkID), "Should have NetworkID")
     testing.expect(t, ecs.has_component(world, e, AssetHash), "Should have AssetHash")
 
-    net := ecs.get_component(world, e, NetworkID)
-    asset := ecs.get_component(world, e, AssetHash)
+    net, _ := ecs.get_component(world, e, NetworkID)
+    asset, _ := ecs.get_component(world, e, AssetHash)
 
     testing.expect(t, net^ == NetworkID(0xDEADBEEF), "NetworkID should be 0xDEADBEEF")
     testing.expect(t, asset^ == AssetHash(0xCAFEBABE), "AssetHash should be 0xCAFEBABE")
@@ -1834,7 +1842,7 @@ test_add_entity_with_components_and_pair :: proc(t: ^testing.T) {
     child := ecs.add_entity(world, Position{10, 20}, ecs.pair(ChildOf, parent))
 
     testing.expect(t, ecs.has_component(world, child, Position), "Child should have Position")
-    pos := ecs.get_component(world, child, Position)
+    pos, _ := ecs.get_component(world, child, Position)
     testing.expect(t, pos.x == 10 && pos.y == 20, "Position should be (10, 20)")
     testing.expect(t, ecs.has_pair(world, child, ChildOf, parent), "Child should have ChildOf pair to parent")
 }
@@ -2090,7 +2098,7 @@ test_deferred_no_double_apply :: proc(t: ^testing.T) {
     ecs.flush(world)
 
     // Check final value
-    hp := ecs.get_component(world, e, Health)
+    hp, _ := ecs.get_component(world, e, Health)
     testing.expect(t, hp != nil && hp.value == 200, "Health should be 200 after second add")
 }
 
@@ -2112,7 +2120,7 @@ test_get_component_snapshot_during_iteration :: proc(t: ^testing.T) {
     ecs.add_component(world, e, Health{100})
 
     // get_component should return nil (snapshot semantics - deferred not visible)
-    hp := ecs.get_component(world, e, Health)
+    hp, _ := ecs.get_component(world, e, Health)
     testing.expect(t, hp == nil, "get_component should return nil for deferred add (snapshot semantics)")
 
     // has_component should also return false
@@ -2122,7 +2130,7 @@ test_get_component_snapshot_during_iteration :: proc(t: ^testing.T) {
     ecs.query_finish(&iter)
 
     // After flush, component should be accessible
-    hp2 := ecs.get_component(world, e, Health)
+    hp2, _ := ecs.get_component(world, e, Health)
     testing.expect(t, hp2 != nil, "get_component should return data after flush")
     testing.expect(t, hp2 != nil && hp2.value == 100, "Health value should be 100 after flush")
 }
@@ -2145,8 +2153,9 @@ test_get_component_snapshot_after_remove :: proc(t: ^testing.T) {
     ecs.remove_component(world, e, Health)
 
     // get_component should still return data (snapshot semantics - remove not visible)
-    hp := ecs.get_component(world, e, Health)
+    hp, hp_ok := ecs.get_component(world, e, Health)
     testing.expect(t, hp != nil, "get_component should still return data for deferred remove (snapshot semantics)")
+    testing.expect(t, hp_ok == true, "get_component should still return data for deferred remove (snapshot semantics)")
     testing.expect(t, hp != nil && hp.value == 100, "Health value should still be 100")
 
     // has_component should also return true
@@ -2156,8 +2165,9 @@ test_get_component_snapshot_after_remove :: proc(t: ^testing.T) {
     ecs.query_finish(&iter)
 
     // After flush, component is removed
-    hp2 := ecs.get_component(world, e, Health)
+    hp2, hp2_ok := ecs.get_component(world, e, Health)
     testing.expect(t, hp2 == nil, "Health should be removed after flush")
+    testing.expect(t, hp2_ok == false, "Health should be removed after flush")
 }
 
 // =============================================================================
@@ -2446,13 +2456,14 @@ test_type_entity_get_component :: proc(t: ^testing.T) {
     ecs.add_component(world, TestRelation, Health{value = 100})
 
     // Get the component
-    health := ecs.get_component(world, TestRelation, Health)
+    health, health_ok := ecs.get_component(world, TestRelation, Health)
     testing.expect(t, health != nil, "Should get Health component from TestRelation type")
+    testing.expect(t, health_ok == true, "Should get Health component from TestRelation type")
     testing.expect(t, health.value == 100, "Health value should be 100")
 
     // Modify it
     health.value = 200
-    health2 := ecs.get_component(world, TestRelation, Health)
+    health2, _ := ecs.get_component(world, TestRelation, Health)
     testing.expect(t, health2.value == 200, "Health value should be updated to 200")
 }
 
