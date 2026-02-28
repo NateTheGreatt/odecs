@@ -123,6 +123,20 @@ add_entity :: proc(world: ^World, components: ..any) -> EntityID {
             continue
         }
 
+        // Handle encoded typeid (from pair() returning typeid)
+        if comp.id == typeid {
+            encoded_tid := (cast(^typeid)comp.data)^
+            if is_encoded(encoded_tid) {
+                term := decode_term(encoded_tid)
+                pair_cid, data_size, ok := resolve_term_to_pair(world, term)
+                if ok {
+                    ensure_pair_registered(world, pair_cid, data_size)
+                    append(&cids, pair_cid)
+                }
+                continue
+            }
+        }
+
         cid := resolve_type(world, comp.id)
         append(&cids, cid)
         component_data[cid] = comp.data
@@ -289,6 +303,15 @@ add_component_entity :: proc(world: ^World, entity: EntityID, component: $T) {
     // Handle Term (pair) specially at compile time
     when T == Term {
         add_component_term_impl(world, entity, component)
+    } else when T == typeid {
+        // Check if it's an encoded term (from pair() returning typeid)
+        if is_encoded(component) {
+            term := decode_term(component)
+            add_component_term_impl(world, entity, term)
+        } else {
+            // Plain typeid - add as tag component
+            add_component_value_impl(world, entity, component)
+        }
     } else {
         add_component_value_impl(world, entity, component)
     }
@@ -766,6 +789,7 @@ add_component_by_id_immediate :: proc(world: ^World, entity: EntityID, cid: Comp
         }
     }
 
+
     idx := u32(entity_index(entity))
     record := &world.records[idx]
     arch := record.archetype
@@ -832,6 +856,7 @@ remove_component_by_id_immediate :: proc(world: ^World, entity: EntityID, cid: C
     arch := record.archetype
 
     if !archetype_has(arch, cid) do return
+
 
     // Find/create target archetype with pre-computed column mapping
     edge: Archetype_Edge

@@ -25,17 +25,27 @@ Observer :: struct {
 // OBSERVER API
 // =============================================================================
 
-on_add :: proc(terms: ..Term) -> Observer_Def {
+on_add :: proc(types: ..typeid) -> Observer_Def {
+    // Decode typeids to Terms
+    terms := make([]Term, len(types), context.temp_allocator)
+    for i := 0; i < len(types); i += 1 {
+        terms[i] = decode_term(types[i])
+    }
     return Observer_Def{
         event = .On_Add,
-        terms = slice.clone(terms, context.temp_allocator),
+        terms = terms,
     }
 }
 
-on_remove :: proc(terms: ..Term) -> Observer_Def {
+on_remove :: proc(types: ..typeid) -> Observer_Def {
+    // Decode typeids to Terms
+    terms := make([]Term, len(types), context.temp_allocator)
+    for i := 0; i < len(types); i += 1 {
+        terms[i] = decode_term(types[i])
+    }
     return Observer_Def{
         event = .On_Remove,
-        terms = slice.clone(terms, context.temp_allocator),
+        terms = terms,
     }
 }
 

@@ -1,31 +1,87 @@
 package ecs
 
 import "core:slice"
+import "core:sync"
 
 // =============================================================================
 // QUERY SYSTEM - DECLARATIVE API
 // =============================================================================
 
-// Pure term constructors - no world parameter needed
-// Usage: query(world, {all(Position, Velocity), not(Dead)})
-//        query(world, {Position, Velocity})  // shorthand for all()
+// Usage: query(world, {Position, Velocity, not(Dead)})
+//        query(world, {Position, Velocity})  // plain typeids are simple "has component"
 
-// Term_Arg allows passing either a Term or a raw typeid to query()
-// This enables: query(world, {Enemy}) as shorthand for query(world, {all(Enemy)})
-Term_Arg :: union {
-    Term,
-    typeid,
+// =============================================================================
+// TERM ENCODING SYSTEM
+// =============================================================================
+//
+// WHY: We want this clean API where types and operators mix freely:
+//
+//     query(world, {Position, Velocity, not(Dead), or(Flying, Swimming)})
+//
+// PROBLEM: Odin auto-converts type names to typeid ONLY when target type is
+// exactly `typeid` or `[]typeid`. With a union like `union{Term, typeid}`,
+// Odin can't infer which variant, so users would need explicit `typeid_of()`.
+//
+// SOLUTION: Use `[]typeid` as the API. Plain types pass through as typeids.
+// Term constructors (not, or, pair, etc.) store their Term in a global array
+// and return a pointer into it transmuted as a typeid.
+//
+// ENCODING: Real typeids point into the runtime type_info table. Encoded terms
+// point into our `encoded_terms` array. The memory ranges never overlap, so
+// a simple bounds check distinguishes them with zero false positives.
+//
+// WHY GLOBAL (not thread-local): Parallel test runners execute tests across
+// threads. Thread-local storage would break when terms encoded in thread A
+// are decoded in thread B. Global atomic storage ensures correctness.
+
+// Global term storage - fixed size array, thread-safe via atomic counter
+MAX_ENCODED_TERMS :: 65536
+@(private="file")
+encoded_terms: [MAX_ENCODED_TERMS]Term
+@(private="file")
+encoded_term_count: u32  // Atomic counter
+
+// Encode a Term into a typeid by storing it globally and returning a pointer
+encode_term :: proc(t: Term) -> typeid {
+    idx := sync.atomic_add(&encoded_term_count, 1)
+    if idx >= MAX_ENCODED_TERMS {
+        panic("ECS: Too many encoded query terms (max 65536)")
+    }
+    encoded_terms[idx] = t
+    return transmute(typeid)&encoded_terms[idx]
 }
 
-// Convert Term_Arg to Term (typeids become simple "has component" terms)
-term_arg_to_term :: proc(arg: Term_Arg) -> Term {
-    switch a in arg {
-    case Term:
-        return a
-    case typeid:
-        return term_from_typeid(a)
+// Check if a typeid is an encoded term (pointer into our array)
+is_encoded :: proc(t: typeid) -> bool {
+    ptr := transmute(uintptr)t
+    base := uintptr(&encoded_terms[0])
+    return ptr >= base && ptr < base + size_of(encoded_terms)
+}
+
+// Decode a typeid back to a Term
+decode_term :: proc(t: typeid) -> Term {
+    if !is_encoded(t) {
+        return term_from_typeid(t)
     }
-    return Term{}  // Should never reach here
+    return (transmute(^Term)t)^
+}
+
+// Convert []typeid to []Term for internal use
+typeids_to_terms :: proc(types: []typeid) -> []Term {
+    terms := make([]Term, len(types), context.temp_allocator)
+    for i := 0; i < len(types); i += 1 {
+        terms[i] = decode_term(types[i])
+    }
+    // All encoded terms have been decoded (copied out) - slots are dead.
+    // Reset the bump allocator so it never fills up.
+    sync.atomic_store(&encoded_term_count, 0)
+    return terms
+}
+
+// Reset encoded term counter - now called automatically by typeids_to_terms.
+// Kept as public API for backward compatibility.
+reset_encoded_terms :: proc() {
+    sync.atomic_store(&encoded_term_count, 0)
 }
 
 // Runtime typeid to Term conversion
@@ -49,171 +105,147 @@ pair :: proc {
     pair_var,
 }
 
-pair_types :: proc($R, $T: typeid) -> Term {
-    return Term{
+pair_types :: proc($R, $T: typeid) -> typeid {
+    return encode_term(Term{
         kind     = .Pair,
         relation = R,
         target   = Pair_Target(typeid_of(T)),
         source   = This,
         capture_to = None,
-    }
+    })
 }
 
-pair_type_entity :: proc($R: typeid, target: EntityID) -> Term {
-    return Term{
+pair_type_entity :: proc($R: typeid, target: EntityID) -> typeid {
+    return encode_term(Term{
         kind     = .Pair,
         relation = R,
         target   = target,
         source   = This,
         capture_to = None,
-    }
+    })
 }
 
-pair_entity_type :: proc(relation: EntityID, $T: typeid) -> Term {
-    return Term{
+pair_entity_type :: proc(relation: EntityID, $T: typeid) -> typeid {
+    return encode_term(Term{
         kind            = .Pair,
         relation        = nil,
         relation_entity = relation,
         target          = Pair_Target(typeid_of(T)),
         source          = This,
         capture_to      = None,
-    }
+    })
 }
 
-pair_entities :: proc(relation: EntityID, target: EntityID) -> Term {
-    return Term{
+pair_entities :: proc(relation: EntityID, target: EntityID) -> typeid {
+    return encode_term(Term{
         kind            = .Pair,
         relation        = nil,
         relation_entity = relation,
         target          = target,
         source          = This,
         capture_to      = None,
-    }
+    })
 }
 
-pair_wildcard :: proc($R: typeid, _: Wildcard_T) -> Term {
-    return Term{
+pair_wildcard :: proc($R: typeid, _: Wildcard_T) -> typeid {
+    return encode_term(Term{
         kind     = .Pair,
         relation = R,
         target   = Wildcard,
         source   = This,
         capture_to = None,
-    }
+    })
 }
 
-pair_any :: proc($R: typeid, _: Any_T) -> Term {
-    return Term{
+pair_any :: proc($R: typeid, _: Any_T) -> typeid {
+    return encode_term(Term{
         kind     = .Pair,
         relation = R,
         target   = Any,
         source   = This,
         capture_to = None,
-    }
+    })
 }
 
-pair_var :: proc($R: typeid, v: Var) -> Term {
-    return Term{
+pair_var :: proc($R: typeid, v: Var) -> typeid {
+    return encode_term(Term{
         kind     = .Pair,
         relation = R,
         target   = v,
         source   = This,
         capture_to = None,
-    }
+    })
 }
 
-// Term modifiers - return new Term with modification applied
+// =============================================================================
+// HIERARCHY/CASCADE TERM - DEPTH-ORDERED ITERATION
+// =============================================================================
+//
+// The hierarchy()/cascade() modifier enables topological iteration for hierarchical relations.
+// Entities are iterated in depth order: depth 0 (roots), then depth 1, etc.
+// This ensures parents are always processed before their children.
+//
+// Usage:
+//   for arch in ecs.query(world, {ecs.hierarchy(ChildOf)}) {
+//       // Parents processed before children
+//   }
+//
+// No special trait setup required - depths are computed on-demand.
 
-on :: proc {
-    on_term,
-    on_typeid,
+hierarchy :: proc($R: typeid) -> typeid {
+    return encode_term(Term{
+        kind       = .Pair,
+        relation   = R,
+        target     = Wildcard,
+        source     = This,
+        capture_to = None,
+        cascade    = true,
+    })
 }
 
-on_term :: proc(v: Var, t: Term) -> Term {
-    r := t
-    r.source = v
-    return r
+// Alias for hierarchy()
+cascade :: hierarchy
+
+// Term modifiers - take a typeid (plain or encoded), return encoded typeid
+
+on :: proc(v: Var, T: typeid) -> typeid {
+    t := decode_term(T)
+    t.source = v
+    return encode_term(t)
 }
 
-on_typeid :: proc(v: Var, T: typeid) -> Term {
-    return on_term(v, term_from_typeid(T))
+capture :: proc(v: Var, T: typeid) -> typeid {
+    t := decode_term(T)
+    t.capture_to = v
+    return encode_term(t)
 }
 
-capture :: proc {
-    capture_term,
-    capture_typeid,
+// Traversal modifiers - take typeid (plain or encoded), return encoded typeid
+
+up :: proc(T: typeid) -> typeid {
+    t := decode_term(T)
+    t.traverse_dir = .Up
+    return encode_term(t)
 }
 
-capture_term :: proc(v: Var, t: Term) -> Term {
-    r := t
-    r.capture_to = v
-    return r
+up_with :: proc(T: typeid, $R: typeid) -> typeid {
+    t := decode_term(T)
+    t.traverse_dir = .Up
+    t.traverse_rel = R
+    return encode_term(t)
 }
 
-capture_typeid :: proc(v: Var, T: typeid) -> Term {
-    return capture_term(v, term_from_typeid(T))
+down :: proc(T: typeid) -> typeid {
+    t := decode_term(T)
+    t.traverse_dir = .Down
+    return encode_term(t)
 }
 
-// Traversal modifiers - use up_with/down_with to specify relationship type
-up :: proc {
-    up_term,
-    up_typeid,
-}
-
-up_term :: proc(t: Term) -> Term {
-    r := t
-    r.traverse_dir = .Up
-    return r
-}
-
-up_typeid :: proc(T: typeid) -> Term {
-    return up_term(term_from_typeid(T))
-}
-
-up_with :: proc {
-    up_with_term,
-    up_with_typeid,
-}
-
-up_with_term :: proc(t: Term, $R: typeid) -> Term {
-    r := t
-    r.traverse_dir = .Up
-    r.traverse_rel = R
-    return r
-}
-
-up_with_typeid :: proc(T: typeid, $R: typeid) -> Term {
-    return up_with_term(term_from_typeid(T), R)
-}
-
-down :: proc {
-    down_term,
-    down_typeid,
-}
-
-down_term :: proc(t: Term) -> Term {
-    r := t
-    r.traverse_dir = .Down
-    return r
-}
-
-down_typeid :: proc(T: typeid) -> Term {
-    return down_term(term_from_typeid(T))
-}
-
-down_with :: proc {
-    down_with_term,
-    down_with_typeid,
-}
-
-down_with_term :: proc(t: Term, $R: typeid) -> Term {
-    r := t
-    r.traverse_dir = .Down
-    r.traverse_rel = R
-    return r
-}
-
-down_with_typeid :: proc(T: typeid, $R: typeid) -> Term {
-    return down_with_term(term_from_typeid(T), R)
+down_with :: proc(T: typeid, $R: typeid) -> typeid {
+    t := decode_term(T)
+    t.traverse_dir = .Down
+    t.traverse_rel = R
+    return encode_term(t)
 }
 
 // =============================================================================
@@ -225,110 +257,73 @@ down_with_typeid :: proc(T: typeid, $R: typeid) -> Term {
 // storage. The query system processes Terms and caches ComponentIDs, not Terms.
 
 // AND - require all (aliases: and, all)
-and_terms :: proc(terms: ..Term) -> Term {
-    if len(terms) == 1 do return terms[0]
-    return Term{
+// Takes variadic typeids (plain or encoded), returns encoded typeid
+and :: proc(types: ..typeid) -> typeid {
+    if len(types) == 1 {
+        return types[0]  // Single item, return as-is (could be plain or encoded)
+    }
+    terms := make([]Term, len(types), context.temp_allocator)
+    for i := 0; i < len(types); i += 1 {
+        terms[i] = decode_term(types[i])
+    }
+    return encode_term(Term{
         kind        = .Group,
         group_op    = .All,
-        group_terms = slice.clone(terms, context.temp_allocator),
+        group_terms = terms,
         source      = This,
         capture_to  = None,
-    }
+    })
 }
 
-and_typeids :: proc(types: ..typeid) -> Term {
+// Alias for and()
+all :: and
+
+// OR - require any (aliases: or, some)
+// Takes variadic typeids (plain or encoded), returns encoded typeid
+or :: proc(types: ..typeid) -> typeid {
     if len(types) == 1 {
-        return term_from_typeid(types[0])
+        return types[0]
     }
     terms := make([]Term, len(types), context.temp_allocator)
     for i := 0; i < len(types); i += 1 {
-        terms[i] = term_from_typeid(types[i])
+        terms[i] = decode_term(types[i])
     }
-    return and_terms(..terms)
-}
-
-and :: proc {
-    and_terms,
-    and_typeids,
-}
-
-all :: proc {
-    and_terms,
-    and_typeids,
-}
-
-// OR - require any (aliases: or, any)
-or_terms :: proc(terms: ..Term) -> Term {
-    if len(terms) == 1 do return terms[0]
-    return Term{
+    return encode_term(Term{
         kind        = .Group,
         group_op    = .Any,
-        group_terms = slice.clone(terms, context.temp_allocator),
+        group_terms = terms,
         source      = This,
         capture_to  = None,
-    }
+    })
 }
 
-or_typeids :: proc(types: ..typeid) -> Term {
-    if len(types) == 1 {
-        return term_from_typeid(types[0])
-    }
-    terms := make([]Term, len(types), context.temp_allocator)
-    for i := 0; i < len(types); i += 1 {
-        terms[i] = term_from_typeid(types[i])
-    }
-    return or_terms(..terms)
-}
-
-or :: proc {
-    or_terms,
-    or_typeids,
-}
-
-some :: proc {
-    or_terms,
-    or_typeids,
-}
+// Alias for or()
+some :: or
 
 // NOT/NONE - require none (aliases: not, none)
-// Note: not() also works on single Term to negate it
-none_terms :: proc(terms: ..Term) -> Term {
-    if len(terms) == 1 {
-        r := terms[0]
-        r.negate = true
-        return r
-    }
-    return Term{
-        kind        = .Group,
-        group_op    = .None,
-        group_terms = slice.clone(terms, context.temp_allocator),
-        source      = This,
-        capture_to  = None,
-    }
-}
-
-none_typeids :: proc(types: ..typeid) -> Term {
+// Single item: negates it. Multiple items: matches none of them.
+// Takes variadic typeids (plain or encoded), returns encoded typeid
+not :: proc(types: ..typeid) -> typeid {
     if len(types) == 1 {
-        t := term_from_typeid(types[0])
+        t := decode_term(types[0])
         t.negate = true
-        return t
+        return encode_term(t)
     }
     terms := make([]Term, len(types), context.temp_allocator)
     for i := 0; i < len(types); i += 1 {
-        terms[i] = term_from_typeid(types[i])
+        terms[i] = decode_term(types[i])
     }
-    return none_terms(..terms)
+    return encode_term(Term{
+        kind        = .Group,
+        group_op    = .None,
+        group_terms = terms,
+        source      = This,
+        capture_to  = None,
+    })
 }
 
-not :: proc {
-    none_terms,
-    none_typeids,
-}
-
-none :: proc {
-    none_terms,
-    none_typeids,
-}
+// Alias for not()
+none :: not
 
 // =============================================================================
 // QUERY TERM RESOLUTION
@@ -432,41 +427,42 @@ Query_Flag :: enum {
 }
 
 // =============================================================================
-// ARCHETYPE ITERATOR - Safe iteration with automatic cleanup
+// ARCHETYPE QUERY - Direct iteration with automatic cleanup
 // =============================================================================
 //
-// Usage:
-//   q := ecs.query(world, {ecs.all(Position, Velocity)})
-//   for arch in ecs.archs(&q) {
+// Usage (one-line - no deferred safety):
+//   for arch in ecs.query(world, {Position, Velocity}) {
 //       positions := ecs.get_table(world, arch, Position)
 //       // ...
 //   }
-//   // Cleanup is automatic via @(deferred_out) - safe to break/return early
 //
-// For read-only iteration without structural changes, use query_raw() instead.
+// Usage (two-line - deferred safety for structural changes):
+//   q := ecs.query(world, {Position, Velocity})
+//   for arch in q {
+//       // Safe to add/remove components, destroy entities (changes are deferred)
+//   }
+//   // Cleanup is automatic via @(deferred_in) - safe to break/return early
 
-Query :: struct {
-    world:      ^World,
-    archetypes: []^Archetype,
-    index:      int,
-}
+// Query is a distinct slice of archetype pointers - directly iterable in for-in.
+// Two usage patterns with the same query() function:
+//
+//   One-line (no deferred safety - structural changes are immediate):
+//     for arch in ecs.query(world, {Position, Velocity}) { ... }
+//
+//   Two-line (deferred safety - structural changes batched until scope exit):
+//     q := ecs.query(world, {Position, Velocity})
+//     for arch in q { ... }
+//
+Query :: distinct []^Archetype
 
-// Archetype iterator - use with: for arch in archs(&q)
-archs :: proc(q: ^Query) -> (arch: ^Archetype, ok: bool) {
-    if q.index >= len(q.archetypes) {
-        return nil, false
-    }
-    arch = q.archetypes[q.index]
-    q.index += 1
-    return arch, true
-}
-
-// Automatic cleanup - called via @(deferred_out) when Query goes out of scope
-query_auto_cleanup :: proc(q: Query) {
-    if q.world != nil {
-        q.world.iteration_depth -= 1
-        if q.world.iteration_depth == 0 {
-            flush_deferred(q.world)
+// Automatic cleanup - called via @(deferred_in) when query() scope exits.
+// With one-line pattern this fires per-iteration (harmless due to clamp).
+// With two-line pattern this fires once at scope exit (full deferred safety).
+query_auto_cleanup :: proc(world: ^World, types: []typeid) {
+    if world.iteration_depth > 0 {
+        world.iteration_depth -= 1
+        if world.iteration_depth == 0 {
+            flush_deferred(world)
         }
     }
 }
@@ -495,6 +491,7 @@ Query_Context :: struct {
     wildcard_terms:  [dynamic]Wildcard_Term,  // Wildcard pair matching
     any_of_groups:   [dynamic]Any_Of_Group,   // Any_of group matching
     captures:        [dynamic]Capture_Info,   // Variable captures
+    cascade_rel:     ComponentID,             // Cascade relation (0 if none)
 }
 
 // Query_Context uses temp_allocator - no manual cleanup required.
@@ -514,49 +511,84 @@ query_context_init :: proc() -> Query_Context {
 // For internal use or when you know you won't modify entities during iteration.
 //
 // Usage: query_raw(world, {Position, Velocity, not(Dead)})
-query_raw :: proc(world: ^World, term_args: []Term_Arg) -> []^Archetype {
-    return query_with_flags(world, term_args, {})
+query_raw :: proc(world: ^World, types: []typeid) -> []^Archetype {
+    return query_with_flags(world, types, {})
 }
 
-// Query with safe iteration - structural changes are deferred until query ends.
-// Cleanup is automatic via @(deferred_out) when Query goes out of scope.
-@(deferred_out=query_auto_cleanup)
-query :: proc(world: ^World, term_args: []Term_Arg) -> Query {
-    // Convert Term_Args to Terms
-    terms := make([]Term, len(term_args), context.temp_allocator)
-    for arg, i in term_args {
-        terms[i] = term_arg_to_term(arg)
-    }
+// Query with automatic cleanup via @(deferred_in).
+//
+// Usage:
+//   for arch in ecs.query(world, {Position, Velocity}) { ... }
+//   for arch in ecs.query(world, {Position, ecs.not(Dead)}) { ... }
+@(deferred_in=query_auto_cleanup)
+query :: proc(world: ^World, types: []typeid) -> Query {
+    // Convert typeids to Terms (term_storage holds encoded terms from constructors)
+    terms := typeids_to_terms(types)
 
     // Flush before entering iteration - only safe when not already iterating
     if world.iteration_depth == 0 {
         flush_deferred(world)
     }
     world.iteration_depth += 1
-    return Query{
-        world      = world,
-        archetypes = query_with_flags_internal(world, terms, {}),
-        index      = 0,
+
+    cached := query_cached_internal(world, terms, {})
+
+    // Cascade: build depth-ordered slice so for-in iterates parents before children
+    if cached.depth_groups != nil {
+        ordered := make([dynamic]^Archetype, context.temp_allocator)
+        for &group in cached.depth_groups {
+            for idx in group {
+                append(&ordered, cached.archetypes[idx])
+            }
+        }
+        result := Query(ordered[:])
+        // With the one-line `for arch in query(...)` pattern, @(deferred_in)
+        // fires per-iteration. If there are zero results, the for body never
+        // runs and cleanup never fires — so undo the increment here.
+        if len(result) == 0 {
+            world.iteration_depth -= 1
+            if world.iteration_depth == 0 {
+                flush_deferred(world)
+            }
+        }
+        return result
     }
+
+    result := Query(cached.archetypes[:])
+    // Same fix for the non-cascade path.
+    if len(result) == 0 {
+        world.iteration_depth -= 1
+        if world.iteration_depth == 0 {
+            flush_deferred(world)
+        }
+    }
+    return result
 }
 
-// Query with optional flags (public API - accepts Term_Arg)
-query_with_flags :: proc(world: ^World, term_args: []Term_Arg, flags: Query_Flags) -> []^Archetype {
-    // Convert Term_Args to Terms
-    terms := make([]Term, len(term_args), context.temp_allocator)
-    for arg, i in term_args {
-        terms[i] = term_arg_to_term(arg)
-    }
+// Query with optional flags (public API - accepts []typeid)
+query_with_flags :: proc(world: ^World, types: []typeid, flags: Query_Flags) -> []^Archetype {
+    // Convert typeids to Terms
+    terms := typeids_to_terms(types)
     return query_with_flags_internal(world, terms, flags)
 }
 
-// Internal query implementation (works with []Term directly)
+// Internal query implementation (works with []Term directly) - returns archetypes only
 query_with_flags_internal :: proc(world: ^World, terms: []Term, flags: Query_Flags) -> []^Archetype {
+    cached := query_cached_internal(world, terms, flags)
+    return cached.archetypes[:]
+}
+
+// Empty query result for nil cases
+@(private)
+_empty_cached_query: Cached_Query
+
+// Internal query implementation that returns the full cached query
+query_cached_internal :: proc(world: ^World, terms: []Term, flags: Query_Flags) -> ^Cached_Query {
     // Note: Flushing is handled by query() before incrementing iteration_depth
     // This prevents nested queries from flushing mid-iteration
 
     if len(terms) == 0 {
-        return nil
+        return &_empty_cached_query
     }
 
     // Build query context
@@ -565,26 +597,43 @@ query_with_flags_internal :: proc(world: ^World, terms: []Term, flags: Query_Fla
 
     // Check cache
     key := hash_query_context(&ctx)
-    if cached, ok := &world.query_cache[key]; ok {
+    if cached, ok := &world.query_cache^[key]; ok {
         if cached.generation == world.archetype_generation {
-            return cached.archetypes[:]  // Cache hit
+            return cached  // Cache hit
         }
         // Stale - clear old result and free old slices
         clear(&cached.archetypes)
-        delete(cached.captures, world.allocator)
-        delete(cached.required_cids, world.allocator)
+        delete(cached.captures, world.cache_allocator)
+        delete(cached.required_cids, world.cache_allocator)
         cached.captures = nil
         cached.required_cids = nil
+        // Free old depth_groups
+        if cached.depth_groups != nil {
+            for &group in cached.depth_groups {
+                delete(group)
+            }
+            delete(cached.depth_groups, world.cache_allocator)
+            cached.depth_groups = nil
+        }
     }
 
     // Cache miss or stale - scan archetypes
-    if key not_in world.query_cache {
-        world.query_cache[key] = Cached_Query{
-            archetypes = make([dynamic]^Archetype, world.allocator),
+    if key not_in world.query_cache^ {
+        world.query_cache^[key] = Cached_Query{
+            archetypes = make([dynamic]^Archetype, world.cache_allocator),
             generation = 0,
         }
     }
-    cached := &world.query_cache[key]
+    cached := &world.query_cache^[key]
+
+    // Free old depth_groups if present
+    if cached.depth_groups != nil {
+        for &group in cached.depth_groups {
+            delete(group)
+        }
+        delete(cached.depth_groups, world.cache_allocator)
+        cached.depth_groups = nil
+    }
 
     for arch in world.archetypes {
         if archetype_matches_query(world, arch, &ctx) {
@@ -593,11 +642,68 @@ query_with_flags_internal :: proc(world: ^World, terms: []Term, flags: Query_Fla
     }
     cached.generation = world.archetype_generation
 
-    // Clone captures and required_cids with world.allocator for cache persistence
-    cached.captures = slice.clone(ctx.captures[:], world.allocator)
-    cached.required_cids = slice.clone(ctx.required[:], world.allocator)
+    // Clone captures and required_cids with cache_allocator for cache persistence
+    cached.captures = slice.clone(ctx.captures[:], world.cache_allocator)
+    cached.required_cids = slice.clone(ctx.required[:], world.cache_allocator)
 
-    return cached.archetypes[:]
+    // Build cascade depth groups if cascade is enabled
+    cached.cascade_rel = ctx.cascade_rel
+    if ctx.cascade_rel != 0 {
+        build_cascade_depth_groups(world, cached, ctx.cascade_rel)
+    }
+
+    return cached
+}
+
+// Build depth-grouped archetype indices for cascade queries
+build_cascade_depth_groups :: proc(world: ^World, cached: ^Cached_Query, relation_cid: ComponentID) {
+    if len(cached.archetypes) == 0 {
+        return
+    }
+
+    // First pass: find max depth across all matching archetypes
+    max_depth: u16 = 0
+    for arch_idx := 0; arch_idx < len(cached.archetypes); arch_idx += 1 {
+        arch := cached.archetypes[arch_idx]
+        for entity in arch.entities {
+            depth := compute_hierarchy_depth(world, entity, relation_cid)
+            if depth > max_depth {
+                max_depth = depth
+            }
+        }
+    }
+    cached.max_depth = max_depth
+
+    // Allocate depth groups (max_depth + 1 levels: 0 to max_depth)
+    cached.depth_groups = make([][dynamic]int, int(max_depth) + 1, world.cache_allocator)
+    for i := 0; i < len(cached.depth_groups); i += 1 {
+        cached.depth_groups[i] = make([dynamic]int, world.cache_allocator)
+    }
+
+    // Second pass: group archetypes by their minimum entity depth
+    // (An archetype's position in iteration is determined by min depth of its entities)
+    for arch_idx := 0; arch_idx < len(cached.archetypes); arch_idx += 1 {
+        arch := cached.archetypes[arch_idx]
+
+        // Find minimum depth of entities in this archetype
+        min_depth: u16 = max(u16)
+        has_entities := false
+        for entity in arch.entities {
+            depth := compute_hierarchy_depth(world, entity, relation_cid)
+            has_entities = true
+            if depth < min_depth {
+                min_depth = depth
+            }
+        }
+
+        // If no entities, treat as depth 0
+        if !has_entities {
+            min_depth = 0
+        }
+
+        // Add archetype index to appropriate depth group
+        append(&cached.depth_groups[min_depth], arch_idx)
+    }
 }
 
 // Check if archetype matches all query requirements
@@ -749,6 +855,11 @@ process_term_ctx :: proc(world: ^World, term: ^Term, ctx: ^Query_Context) {
                 relation_cid = r_cid,
                 negate       = term.negate,
             })
+
+            // Track cascade relation if this term has cascade enabled
+            if term.cascade && ctx.cascade_rel == 0 {
+                ctx.cascade_rel = r_cid
+            }
         } else {
             // Exact pair match
             pair_cid: ComponentID
@@ -891,16 +1002,13 @@ Query_Iterator :: struct {
     required_cids:  []ComponentID,  // For disabled check
 }
 
-query_iter :: proc(world: ^World, term_args: []Term_Arg) -> Query_Iterator {
-    return query_iter_with_flags(world, term_args, {})
+query_iter :: proc(world: ^World, types: []typeid) -> Query_Iterator {
+    return query_iter_with_flags(world, types, {})
 }
 
-query_iter_with_flags :: proc(world: ^World, term_args: []Term_Arg, flags: Query_Flags) -> Query_Iterator {
-    // Convert Term_Args to Terms
-    terms := make([]Term, len(term_args), context.temp_allocator)
-    for arg, i in term_args {
-        terms[i] = term_arg_to_term(arg)
-    }
+query_iter_with_flags :: proc(world: ^World, types: []typeid, flags: Query_Flags) -> Query_Iterator {
+    // Convert typeids to Terms
+    terms := typeids_to_terms(types)
 
     // Build query context to get captures and required CIDs
     ctx := query_context_init()
@@ -913,9 +1021,9 @@ query_iter_with_flags :: proc(world: ^World, term_args: []Term_Arg, flags: Query
 
     // Check cache
     key := hash_query_context(&ctx)
-    if cached, ok := &world.query_cache[key]; ok {
+    if cached, ok := &world.query_cache^[key]; ok {
         if cached.generation == world.archetype_generation {
-            // Cache hit - use cached slices (already cloned with world.allocator)
+            // Cache hit - use cached slices (already cloned with cache_allocator)
             world.iteration_depth += 1
             return Query_Iterator{
                 world         = world,
@@ -930,20 +1038,20 @@ query_iter_with_flags :: proc(world: ^World, term_args: []Term_Arg, flags: Query
         }
         // Stale - clear old result and free old slices
         clear(&cached.archetypes)
-        delete(cached.captures, world.allocator)
-        delete(cached.required_cids, world.allocator)
+        delete(cached.captures, world.cache_allocator)
+        delete(cached.required_cids, world.cache_allocator)
         cached.captures = nil
         cached.required_cids = nil
     }
 
     // Cache miss or stale - scan archetypes
-    if key not_in world.query_cache {
-        world.query_cache[key] = Cached_Query{
-            archetypes = make([dynamic]^Archetype, world.allocator),
+    if key not_in world.query_cache^ {
+        world.query_cache^[key] = Cached_Query{
+            archetypes = make([dynamic]^Archetype, world.cache_allocator),
             generation = 0,
         }
     }
-    cached := &world.query_cache[key]
+    cached := &world.query_cache^[key]
 
     for arch in world.archetypes {
         if archetype_matches_query(world, arch, &ctx) {
@@ -952,9 +1060,9 @@ query_iter_with_flags :: proc(world: ^World, term_args: []Term_Arg, flags: Query
     }
     cached.generation = world.archetype_generation
 
-    // Clone captures and required_cids with world.allocator for cache persistence
-    cached.captures = slice.clone(ctx.captures[:], world.allocator)
-    cached.required_cids = slice.clone(ctx.required[:], world.allocator)
+    // Clone captures and required_cids with cache_allocator for cache persistence
+    cached.captures = slice.clone(ctx.captures[:], world.cache_allocator)
+    cached.required_cids = slice.clone(ctx.required[:], world.cache_allocator)
 
     world.iteration_depth += 1  // Enter iteration mode for deferred protection
 

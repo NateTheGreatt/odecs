@@ -12,6 +12,7 @@ Entity_Record :: struct {
     row:       int,
 }
 
+
 // =============================================================================
 // DEFERRED OPERATIONS
 // =============================================================================
@@ -73,8 +74,8 @@ World :: struct {
     observer_index:     map[ObserverID]int,
     next_observer_id:   ObserverID,
 
-    // Query cache
-    query_cache:          map[u64]Cached_Query,
+    // Query cache (heap-allocated, not part of arena snapshots)
+    query_cache:          ^map[u64]Cached_Query,
     archetype_generation: u64,
 
     // Type entities (shadow entities for attaching components to types)
@@ -82,6 +83,7 @@ World :: struct {
 
     // Memory
     allocator:          mem.Allocator,
+    cache_allocator:    mem.Allocator,  // Separate allocator for query cache (not part of snapshot state)
 }
 
 Cached_Query :: struct {
@@ -89,11 +91,17 @@ Cached_Query :: struct {
     generation:    u64,
     captures:      []Capture_Info,    // Cloned with world.allocator
     required_cids: []ComponentID,     // Cloned with world.allocator
+
+    // Cascade support (depth-ordered iteration)
+    cascade_rel:   ComponentID,         // 0 if no cascade
+    depth_groups:  [][dynamic]int,      // depth -> archetype indices (nil if no cascade)
+    max_depth:     u16,                 // Maximum depth in this query's results
 }
 
-create_world :: proc(allocator := context.allocator) -> ^World {
+create_world :: proc(allocator := context.allocator, cache_allocator := context.allocator) -> ^World {
     world := new(World, allocator)
     world.allocator = allocator
+    world.cache_allocator = cache_allocator
     world.component_info = make(map[ComponentID]Component_Info, allocator = allocator)
     world.type_to_component = make(map[typeid]ComponentID, allocator = allocator)
     world.component_to_type = make(map[ComponentID]typeid, allocator = allocator)
@@ -116,7 +124,8 @@ create_world :: proc(allocator := context.allocator) -> ^World {
     world.observers = make([dynamic]Observer, allocator)
     world.observer_index = make(map[ObserverID]int, allocator = allocator)
     world.next_observer_id = 1
-    world.query_cache = make(map[u64]Cached_Query, allocator = allocator)
+    world.query_cache = new(map[u64]Cached_Query, cache_allocator)
+    world.query_cache^ = make(map[u64]Cached_Query, allocator = cache_allocator)
     world.archetype_generation = 0
     world.auto_cleanup_archetypes = true
     world.type_entities = make(map[typeid]EntityID, allocator = allocator)
@@ -184,13 +193,15 @@ delete_world :: proc(world: ^World) {
     }
     delete(world.disabled_components)
 
-    // Free query cache
-    for _, &cached in world.query_cache {
+    // Free query cache (uses cache_allocator)
+    for _, &cached in world.query_cache^ {
         delete(cached.archetypes)
-        delete(cached.captures, world.allocator)
-        delete(cached.required_cids, world.allocator)
+        delete(cached.captures, world.cache_allocator)
+        delete(cached.required_cids, world.cache_allocator)
+        delete(cached.depth_groups, world.cache_allocator)
     }
-    delete(world.query_cache)
+    delete(world.query_cache^)
+    free(world.query_cache, world.cache_allocator)
 
     // Free type entities map
     delete(world.type_entities)
@@ -200,12 +211,19 @@ delete_world :: proc(world: ^World) {
 
 // Clear the query cache to free memory (queries will rebuild on next use)
 clear_query_cache :: proc(world: ^World) {
-    for _, &cached in world.query_cache {
+    for _, &cached in world.query_cache^ {
         delete(cached.archetypes)
-        delete(cached.captures, world.allocator)
-        delete(cached.required_cids, world.allocator)
+        delete(cached.captures, world.cache_allocator)
+        delete(cached.required_cids, world.cache_allocator)
+        // Free cascade depth groups
+        if cached.depth_groups != nil {
+            for &group in cached.depth_groups {
+                delete(group)
+            }
+            delete(cached.depth_groups, world.cache_allocator)
+        }
     }
-    clear(&world.query_cache)
+    clear(world.query_cache)
 }
 
 
@@ -318,6 +336,10 @@ hash_query_context :: proc(ctx: ^Query_Context) -> u64 {
     for group in ctx.any_of_groups {
         h = (h ~ u64(len(group.terms))) * 0x100000001b3
     }
+    h = (h ~ 0xFF) * 0x100000001b3  // Separator
+
+    // Hash cascade relation
+    h = (h ~ u64(ctx.cascade_rel)) * 0x100000001b3
 
     return h
 }

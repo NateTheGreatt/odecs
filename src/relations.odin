@@ -5,8 +5,9 @@ package ecs
 // =============================================================================
 
 // Built-in relation traits - attach these to relation types to modify behavior
-Exclusive :: struct {}  // Entity can have only one target per relation
-Cascade :: struct {}    // Delete entity when its target is deleted
+Exclusive :: struct {}       // Entity can have only one target per relation
+Cascade_Delete :: struct {}  // Delete entity when its target is deleted
+Cascade :: Cascade_Delete    // Alias for Cascade_Delete
 
 // Pair encoding: relation in upper 16 bits, target in lower 16 bits of ComponentID
 // This limits to 65535 component types but allows fast pair operations
@@ -299,6 +300,7 @@ relation_has_trait_runtime :: proc(world: ^World, relation_cid: ComponentID, tra
     return archetype_has(world.records[u32(entity_index(type_entity))].archetype, trait_cid)
 }
 
+
 // Remove all pairs with the given relation except the one we're keeping
 // Used by Exclusive trait to ensure only one target per relation
 remove_exclusive_pairs :: proc(world: ^World, entity: EntityID, relation_cid: ComponentID, keep_pair: ComponentID) {
@@ -316,6 +318,49 @@ remove_exclusive_pairs :: proc(world: ^World, entity: EntityID, relation_cid: Co
     }
 }
 
+// =============================================================================
+// HIERARCHY DEPTH COMPUTATION (on-demand)
+// =============================================================================
+
+// Compute hierarchy depth by traversing up the hierarchy
+// Returns 0 for entities with no parent (roots with the relation targeting them)
+// Entities without the relation pair return 0 (treated as depth 0)
+compute_hierarchy_depth :: proc(world: ^World, entity: EntityID, relation_cid: ComponentID) -> u16 {
+    depth: u16 = 0
+    current := entity
+
+    for {
+        // Find parent by looking for (relation, *) pair on current entity
+        parent_id := find_relation_target(world, current, relation_cid)
+        if parent_id == 0 {
+            break  // No parent found, we're at the root
+        }
+        depth += 1
+        current = parent_id
+
+        // Safety: prevent infinite loops from circular hierarchies
+        if depth > 1000 {
+            break
+        }
+    }
+    return depth
+}
+
+// Find the target of a relation for an entity (returns 0 if not found)
+find_relation_target :: proc(world: ^World, entity: EntityID, relation_cid: ComponentID) -> EntityID {
+    if !entity_alive(world, entity) do return 0
+
+    idx := u32(entity_index(entity))
+    arch := world.records[idx].archetype
+    if arch == nil do return 0
+
+    // Find pair with this relation
+    pair_cid := archetype_find_pair_with_relation(arch, relation_cid)
+    if pair_cid == 0 do return 0
+
+    return EntityID(pair_target(pair_cid))
+}
+
 // Delete all entities that have a Cascade relation targeting the given entity
 cascade_delete_dependents :: proc(world: ^World, target_entity: EntityID) {
     target_cid := ComponentID(entity_index(target_entity))
@@ -329,7 +374,7 @@ cascade_delete_dependents :: proc(world: ^World, target_entity: EntityID) {
 
             // Check if this relation has Cascade trait
             relation_cid := pair_relation(cid)
-            if !relation_has_trait_runtime(world, relation_cid, Cascade) do continue
+            if !relation_has_trait_runtime(world, relation_cid, Cascade_Delete) do continue
 
             // Collect all entities in this archetype for deletion
             for e in arch.entities {

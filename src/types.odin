@@ -1,7 +1,5 @@
 package ecs
 
-import "base:runtime"
-
 // =============================================================================
 // CORE TYPES
 // =============================================================================
@@ -59,6 +57,7 @@ Term :: struct {
     traverse_dir: Traverse,      // Traversal direction
     traverse_rel: typeid,        // Relationship to traverse
     negate:       bool,          // Negation (for not())
+    cascade:      bool,          // Enable cascade ordering (depth-ordered iteration)
 
     // Grouping
     group_op:     Group_Op,
