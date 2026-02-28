@@ -34,12 +34,11 @@ main :: proc() {
 
     player := add_entity(world, Position{0, 0}, Velocity{1, 1})
 
-    q := query(world, {all(Position, Velocity)})
-    for arch in archs(&q) {
+    for arch in query(world, {Position, Velocity}) {
         positions := get_table(world, arch, Position)
         velocities := get_table(world, arch, Velocity)
 
-        for i in 0..<len(positions) {
+        for i in 0..<len(arch.entities) {
             positions[i].x += velocities[i].vx
             positions[i].y += velocities[i].vy
         }
@@ -58,11 +57,11 @@ main :: proc() {
 ```odin
 using ecs
 
-query(world, {all(Position, Velocity)})
+query(world, {all(Position, Velocity)}) // same as {Position, Velocity} - and/all is default
 query(world, {or(Player, Enemy)})
 query(world, {not(Dead, Disabled)})
 query(world, {all(Position), not(Dead)})
-query(world, {all(Position, or(Player, Enemy), none(Dead))})
+query(world, {all(Position), or(Player, Enemy), none(Dead)})
 ```
 
 ## Relationships
