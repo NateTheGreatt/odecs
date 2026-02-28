@@ -314,8 +314,7 @@ test_get_table :: proc(t: ^testing.T) {
         ecs.add_component(world, e, Position{f32(i), f32(i * 10)})
     }
 
-    q := ecs.query(world, {ecs.all(Position)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Position)}) {
         positions := ecs.get_table(world, arch, Position)
         entities := ecs.get_entities(arch)
 
@@ -393,17 +392,15 @@ test_query_pairs :: proc(t: ^testing.T) {
     }
 
     // Query entities with Contains-gold pair
-    result := ecs.query(world, {ecs.pair(Contains, gold)})
     total := 0
-    for arch in ecs.archs(&result) {
+    for arch in ecs.query(world, {ecs.pair(Contains, gold)}) {
         total += len(ecs.get_entities(arch))
     }
     testing.expect(t, total == 3, "Should have 3 entities with Contains-gold (i=0,2,4)")
 
     // Query entities with Position but NOT Contains-gold
-    result2 := ecs.query(world, {ecs.all(Position), ecs.not(ecs.pair(Contains, gold))})
     total2 := 0
-    for arch in ecs.archs(&result2) {
+    for arch in ecs.query(world, {ecs.all(Position), ecs.not(ecs.pair(Contains, gold))}) {
         total2 += len(ecs.get_entities(arch))
     }
     testing.expect(t, total2 == 2, "Should have 2 entities with Position but not Contains-gold (i=1,3)")
@@ -510,21 +507,15 @@ test_many_entities :: proc(t: ^testing.T) {
 
     // Query Position
     count_pos := 0
-    {
-        q := ecs.query(world, {ecs.all(Position)})
-        for arch in ecs.archs(&q) {
-            count_pos += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position)}) {
+        count_pos += len(ecs.get_entities(arch))
     }
     testing.expect(t, count_pos == N, fmt.tprintf("Should have %d entities with Position", N))
 
     // Query Position + Velocity
     count_both := 0
-    {
-        q := ecs.query(world, {ecs.all(Position), ecs.all(Velocity)})
-        for arch in ecs.archs(&q) {
-            count_both += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position), ecs.all(Velocity)}) {
+        count_both += len(ecs.get_entities(arch))
     }
     testing.expect(t, count_both == N / 2, fmt.tprintf("Should have %d entities with Position+Velocity", N / 2))
 
@@ -534,11 +525,8 @@ test_many_entities :: proc(t: ^testing.T) {
     }
 
     count_remaining := 0
-    {
-        q := ecs.query(world, {ecs.all(Position)})
-        for arch in ecs.archs(&q) {
-            count_remaining += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position)}) {
+        count_remaining += len(ecs.get_entities(arch))
     }
     testing.expect(t, count_remaining == N / 2, fmt.tprintf("Should have %d entities remaining", N / 2))
 }
@@ -665,8 +653,7 @@ test_get_table_cast :: proc(t: ^testing.T) {
 
     Vec2 :: struct { x, y: f32 }
 
-    q := ecs.query(world, {ecs.all(Position)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Position)}) {
         vecs := ecs.get_table_cast(world, arch, Position, Vec2)
         testing.expect(t, len(vecs) == 3, "Should have 3 items in cast table")
         for v, i in vecs {
@@ -695,12 +682,9 @@ test_pair_entity_as_relation :: proc(t: ^testing.T) {
 
     // Query for entities that like the NPC - test for-in pattern
     count := 0
-    {
-        q := ecs.query(world, {ecs.pair(likes_relation, npc)})
-        for arch in ecs.archs(&q) {
-            count += len(ecs.get_entities(arch))
-        }
-    }  // q goes out of scope here, ends iteration protection
+    for arch in ecs.query(world, {ecs.pair(likes_relation, npc)}) {
+        count += len(ecs.get_entities(arch))
+    }
     testing.expect(t, count == 1, "Should find 1 entity that likes NPC")
 
     ecs.remove_pair(world, player, likes_relation, npc)
@@ -727,8 +711,7 @@ test_pair_entity_target_with_type_relation :: proc(t: ^testing.T) {
 
     // Query children of parent
     count := 0
-    q := ecs.query(world, {ecs.pair(TestRelation, parent)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.pair(TestRelation, parent)}) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 2, "Should find 2 children of parent")
@@ -765,8 +748,7 @@ test_get_table_pair :: proc(t: ^testing.T) {
         ecs.add_pair(world, e, Contains{amount = i * 10}, Gold)
     }
 
-    q := ecs.query(world, {ecs.pair(Contains, Gold)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.pair(Contains, Gold)}) {
         contains_table := ecs.get_table_pair(world, arch, Contains, Gold)
         testing.expect(t, len(contains_table) == 5, "Should have 5 Contains entries")
 
@@ -788,8 +770,7 @@ test_get_table_pair_entity :: proc(t: ^testing.T) {
         ecs.add_pair(world, e, Contains{amount = (i + 1) * 100}, gold_pile)
     }
 
-    q := ecs.query(world, {ecs.pair(Contains, gold_pile)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.pair(Contains, gold_pile)}) {
         contains_table := ecs.get_table_pair_entity(world, arch, Contains, gold_pile)
         testing.expect(t, len(contains_table) == 3, "Should have 3 Contains entries")
     }
@@ -812,8 +793,7 @@ test_not_pair_term_variants :: proc(t: ^testing.T) {
 
     // Query Position but NOT Contains-gold
     count := 0
-    q := ecs.query(world, {ecs.all(Position), ecs.not(ecs.pair(Contains, gold))})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Position), ecs.not(ecs.pair(Contains, gold))}) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Should find 1 entity without Contains-gold pair")
@@ -1059,13 +1039,12 @@ test_query_multiple_has_terms :: proc(t: ^testing.T) {
     // No Velocity, No Health
 
     // Query all three
-    result := ecs.query(world, {
+    count := 0
+    for arch in ecs.query(world, {
         ecs.all(Position),
         ecs.all(Velocity),
         ecs.all(Health),
-    })
-    count := 0
-    for arch in ecs.archs(&result) {
+    }) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Only e1 has all three components")
@@ -1093,13 +1072,12 @@ test_query_multiple_not_terms :: proc(t: ^testing.T) {
     ecs.add_component(world, e4, Gold{})
 
     // Query Position but NOT Dead and NOT Gold
-    result := ecs.query(world, {
+    count := 0
+    for arch in ecs.query(world, {
         ecs.all(Position),
         ecs.not(ecs.all(Dead)),
         ecs.not(ecs.all(Gold)),
-    })
-    count := 0
-    for arch in ecs.archs(&result) {
+    }) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Only e1 has Position without Dead or Gold")
@@ -1166,8 +1144,7 @@ test_modify_component_during_iteration :: proc(t: ^testing.T) {
     }
 
     // Modify components during iteration (safe - same archetype)
-    q1 := ecs.query(world, {ecs.all(Position)})
-    for arch in ecs.archs(&q1) {
+    for arch in ecs.query(world, {ecs.all(Position)}) {
         positions := ecs.get_table(world, arch, Position)
         for &pos in positions {
             pos.y = pos.x * 2
@@ -1175,8 +1152,7 @@ test_modify_component_during_iteration :: proc(t: ^testing.T) {
     }
 
     // Verify modifications
-    q2 := ecs.query(world, {ecs.all(Position)})
-    for arch in ecs.archs(&q2) {
+    for arch in ecs.query(world, {ecs.all(Position)}) {
         positions := ecs.get_table(world, arch, Position)
         for pos, i in positions {
             testing.expect(t, pos.y == f32(i) * 2, fmt.tprintf("Position[%d].y should be %f", i, f32(i) * 2))
@@ -1345,9 +1321,8 @@ test_has_pair_term_entity_target :: proc(t: ^testing.T) {
     // No pair
 
     // Query with entity relation and type target
-    result := ecs.query(world, {ecs.pair(likes_relation, Gold)})
     count := 0
-    for arch in ecs.archs(&result) {
+    for arch in ecs.query(world, {ecs.pair(likes_relation, Gold)}) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Should find 1 entity with (likes_relation, Gold) pair")
@@ -1368,9 +1343,8 @@ test_has_pair_term_entities :: proc(t: ^testing.T) {
     // No pair
 
     // Query with entity-entity pair
-    result := ecs.query(world, {ecs.pair(relation, target)})
     count := 0
-    for arch in ecs.archs(&result) {
+    for arch in ecs.query(world, {ecs.pair(relation, target)}) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Should find 1 entity with entity-entity pair")
@@ -1392,12 +1366,11 @@ test_not_pair_term_relation_entity :: proc(t: ^testing.T) {
     // No pair
 
     // Query Position but NOT (Contains, target)
-    result := ecs.query(world, {
+    count := 0
+    for arch in ecs.query(world, {
         ecs.all(Position),
         ecs.not(ecs.pair(Contains, target)),
-    })
-    count := 0
-    for arch in ecs.archs(&result) {
+    }) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Should find 1 entity without (Contains, target) pair")
@@ -1419,12 +1392,11 @@ test_not_pair_term_entity_target :: proc(t: ^testing.T) {
     // No pair
 
     // Query Position but NOT (likes_relation, Gold)
-    result := ecs.query(world, {
+    count := 0
+    for arch in ecs.query(world, {
         ecs.all(Position),
         ecs.not(ecs.pair(likes_relation, Gold)),
-    })
-    count := 0
-    for arch in ecs.archs(&result) {
+    }) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Should find 1 entity without (likes_relation, Gold) pair")
@@ -1447,12 +1419,11 @@ test_not_pair_term_entities :: proc(t: ^testing.T) {
     // No pair
 
     // Query Position but NOT entity-entity pair
-    result := ecs.query(world, {
+    count := 0
+    for arch in ecs.query(world, {
         ecs.all(Position),
         ecs.not(ecs.pair(relation, target)),
-    })
-    count := 0
-    for arch in ecs.archs(&result) {
+    }) {
         count += len(ecs.get_entities(arch))
     }
     testing.expect(t, count == 1, "Should find 1 entity without entity-entity pair")
@@ -1511,8 +1482,7 @@ test_disabled_component_still_in_query :: proc(t: ^testing.T) {
 
     // Query should still find the entity (disabled doesn't filter queries currently)
     count := 0
-    q := ecs.query(world, {ecs.all(Health)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Health)}) {
         count += len(ecs.get_entities(arch))
     }
     // Current behavior: disabled components are NOT filtered from queries
@@ -1535,9 +1505,8 @@ test_query_only_not_terms :: proc(t: ^testing.T) {
     ecs.add_component(world, e2, Dead{})
 
     // Query with only NOT terms (should find archetypes without Dead)
-    result := ecs.query(world, {ecs.not(ecs.all(Dead))})
     count := 0
-    for arch in ecs.archs(&result) {
+    for arch in ecs.query(world, {ecs.not(ecs.all(Dead))}) {
         count += len(ecs.get_entities(arch))
     }
     // Should find e1 (has Position, no Dead) plus the empty archetype potentially
@@ -1673,42 +1642,30 @@ test_many_entities_10k :: proc(t: ^testing.T) {
 
     // Query Position
     count_pos := 0
-    {
-        q := ecs.query(world, {ecs.all(Position)})
-        for arch in ecs.archs(&q) {
-            count_pos += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position)}) {
+        count_pos += len(ecs.get_entities(arch))
     }
     testing.expect(t, count_pos == N, fmt.tprintf("Should have %d entities with Position", N))
 
     // Query Position + Velocity (every 2nd entity)
     count_vel := 0
-    {
-        q := ecs.query(world, {ecs.all(Position), ecs.all(Velocity)})
-        for arch in ecs.archs(&q) {
-            count_vel += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position), ecs.all(Velocity)}) {
+        count_vel += len(ecs.get_entities(arch))
     }
     testing.expect(t, count_vel == N / 2, fmt.tprintf("Should have %d entities with Position+Velocity", N / 2))
 
     // Query Position + Health (every 3rd entity)
     count_health := 0
-    {
-        q := ecs.query(world, {ecs.all(Position), ecs.all(Health)})
-        for arch in ecs.archs(&q) {
-            count_health += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position), ecs.all(Health)}) {
+        count_health += len(ecs.get_entities(arch))
     }
     expected_health := N / 3 + (1 if N % 3 > 0 else 0)
     testing.expect(t, count_health == expected_health, fmt.tprintf("Should have ~%d entities with Position+Health", expected_health))
 
     // Query Position but NOT Dead
     count_alive := 0
-    {
-        q := ecs.query(world, {ecs.all(Position), ecs.not(ecs.all(Dead))})
-        for arch in ecs.archs(&q) {
-            count_alive += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position), ecs.not(ecs.all(Dead))}) {
+        count_alive += len(ecs.get_entities(arch))
     }
     expected_alive := N - (N / 5 + (1 if N % 5 > 0 else 0))
     testing.expect(t, count_alive == expected_alive, fmt.tprintf("Should have ~%d entities without Dead", expected_alive))
@@ -1719,11 +1676,8 @@ test_many_entities_10k :: proc(t: ^testing.T) {
     }
 
     count_remaining := 0
-    {
-        q := ecs.query(world, {ecs.all(Position)})
-        for arch in ecs.archs(&q) {
-            count_remaining += len(ecs.get_entities(arch))
-        }
+    for arch in ecs.query(world, {ecs.all(Position)}) {
+        count_remaining += len(ecs.get_entities(arch))
     }
     testing.expect(t, count_remaining == N / 2, fmt.tprintf("Should have %d entities remaining", N / 2))
 }
@@ -1873,8 +1827,7 @@ test_deferred_add_during_iteration :: proc(t: ^testing.T) {
 
     // After iteration ends (iterator auto-flushes), components should be applied
     vel_count := 0
-    q := ecs.query(world, {ecs.all(Velocity)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Velocity)}) {
         vel_count += len(ecs.get_entities(arch))
     }
     testing.expect(t, vel_count == 5, "All 5 entities should have Velocity after flush")
@@ -1907,8 +1860,7 @@ test_deferred_remove_during_iteration :: proc(t: ^testing.T) {
 
     // After flush, Velocity should be gone
     vel_count := 0
-    q := ecs.query(world, {ecs.all(Velocity)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Velocity)}) {
         vel_count += len(ecs.get_entities(arch))
     }
     testing.expect(t, vel_count == 0, "No entities should have Velocity after flush")
@@ -1944,8 +1896,7 @@ test_deferred_destroy_during_iteration :: proc(t: ^testing.T) {
 
     // After flush, only half should remain
     remaining := 0
-    q := ecs.query(world, {ecs.all(Position)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Position)}) {
         remaining += len(ecs.get_entities(arch))
     }
     testing.expect(t, remaining == 2, "Only 2 entities should remain (indices 1, 3)")
@@ -1998,8 +1949,7 @@ test_deferred_pair_operations :: proc(t: ^testing.T) {
 
     // After flush, pair should be there
     pair_count := 0
-    q := ecs.query(world, {ecs.pair(Contains, gold)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.pair(Contains, gold)}) {
         pair_count += len(ecs.get_entities(arch))
     }
     testing.expect(t, pair_count == 1, "Player should have Contains-gold pair")
@@ -2084,7 +2034,7 @@ test_deferred_no_double_apply :: proc(t: ^testing.T) {
 
     // Add Health again with value 200 (should update, not duplicate)
     q := ecs.query(world, {ecs.all(Position)})
-    for _ in ecs.archs(&q) {
+    for _ in q {
         ecs.add_component(world, e, Health{200})
     }
     ecs.flush(world)

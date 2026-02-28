@@ -61,10 +61,9 @@ Morrowind :: distinct struct {}
 // HELPER FUNCTIONS
 // =============================================================================
 
-count_query_results :: proc(world: ^ecs.World, terms: []ecs.Term_Arg) -> int {
+count_query_results :: proc(world: ^ecs.World, types: []typeid) -> int {
     count := 0
-    q := ecs.query(world, terms)
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, types) {
         count += len(ecs.get_entities(arch))
     }
     return count
@@ -319,8 +318,7 @@ test_sells_relationship_with_data :: proc(t: ^testing.T) {
     testing.expect(t, count == 1, fmt.tprintf("Expected 1 alchemist vendor selling potions, got %d", count))
 
     // Verify we can read the Sells data
-    q := ecs.query(world, {ecs.all(Vendor), ecs.pair(Sells, potions)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Vendor), ecs.pair(Sells, potions)}) {
         sells_data := ecs.get_table_pair_entity(world, arch, Sells, potions)
         for s in sells_data {
             testing.expect(t, s.price > 0, "Sells price should be positive")
@@ -505,19 +503,17 @@ test_villages_without_potion_vendors :: proc(t: ^testing.T) {
     // (This is how you'd do it without full variable binding)
     villages_without_potion_vendor := 0
 
-    q := ecs.query(world, {ecs.all(Village), ecs.pair(LocatedIn, skyrim)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(Village), ecs.pair(LocatedIn, skyrim)}) {
         villages := ecs.get_entities(arch)
         for village in villages {
             // Check if any vendor in this village sells potions
             has_potion_vendor := false
 
-            q2 := ecs.query(world, {
+            for vendor_arch in ecs.query(world, {
                 ecs.all(Vendor),
                 ecs.pair(LocatedIn, village),
                 ecs.pair(Sells, potions),
-            })
-            for vendor_arch in ecs.archs(&q2) {
+            }) {
                 if len(ecs.get_entities(vendor_arch)) > 0 {
                     has_potion_vendor = true
                     break  // Cleanup automatic via @(deferred_out)
@@ -655,8 +651,7 @@ test_entity_entity_relationships :: proc(t: ^testing.T) {
 
     // Query: NPCs that like themselves (narcissists)
     narcissists := 0
-    q := ecs.query(world, {ecs.all(NPC)})
-    for arch in ecs.archs(&q) {
+    for arch in ecs.query(world, {ecs.all(NPC)}) {
         for npc in ecs.get_entities(arch) {
             if ecs.has_pair(world, npc, likes_relation, npc) {
                 narcissists += 1
