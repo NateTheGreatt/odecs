@@ -1,4 +1,4 @@
-# odecs Core API
+# odecs API
 
 ## World
 
@@ -30,6 +30,11 @@ ecs.remove_entity(world, bullet)  // deferred if called during iteration
 ## Components
 
 ```odin
+// Define as structs or tags
+Position :: struct { x, y: f32 }
+Velocity :: struct { vx, vy: f32 }
+Dead :: distinct struct {}  // zero-sized tag
+
 // Add
 ecs.add_component(world, entity, Position{10, 20})
 ecs.add_components(world, entity, Position{0, 0}, Velocity{1, 0})  // single archetype transition
@@ -70,6 +75,8 @@ See `queries.md` for term builders (`not`, `or`, `pair`, `hierarchy`, etc.).
 
 ## Observers
 
+For side effects only (audio, particles, logging) — not game logic. See `observers.md`.
+
 ```odin
 on_death :: proc(world: ^ecs.World, entity: ecs.EntityID) {
     fmt.println("Entity died:", entity)
@@ -77,6 +84,43 @@ on_death :: proc(world: ^ecs.World, entity: ecs.EntityID) {
 
 obs := ecs.observe(world, ecs.on_add(Dead), on_death)
 ecs.unobserve(world, obs)
+```
+
+---
+
+## Complete Example
+
+```odin
+package main
+
+import "core:fmt"
+import ecs "odecs/src"
+
+Position :: struct { x, y: f32 }
+Velocity :: struct { vx, vy: f32 }
+
+main :: proc() {
+    world := ecs.create_world()
+    defer ecs.delete_world(world)
+
+    ecs.add_entity(world, Position{0, 0}, Velocity{1, 0})
+
+    for i in 0..<3 {
+        ecs.add_entity(world, Position{f32(i * 100), 0}, Velocity{-1, 0})
+    }
+
+    for frame in 0..<5 {
+        for arch in ecs.query(world, {Position, Velocity}) {
+            positions := ecs.get_table(world, arch, Position)
+            velocities := ecs.get_table(world, arch, Velocity)
+
+            for i in 0..<len(arch.entities) {
+                positions[i].x += velocities[i].vx
+            }
+        }
+        fmt.printf("Frame %d complete\n", frame)
+    }
+}
 ```
 
 ---
